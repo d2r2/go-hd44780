@@ -64,13 +64,19 @@ const (
 )
 
 type Lcd struct {
-	i2c       *i2c.I2C
-	backlight bool
-	lcdType   LcdType
+	i2c       			*i2c.I2C
+	backlight 			bool
+	lcdType   			LcdType
+	writeStrobeDelay	uint16
+	resetStrobeDelay	uint16
 }
 
 func NewLcd(i2c *i2c.I2C, lcdType LcdType) (*Lcd, error) {
-	this := &Lcd{i2c: i2c, backlight: false, lcdType: lcdType}
+	this := &Lcd{i2c: i2c,
+				 backlight: false,
+				 lcdType: lcdType,
+				 writeStrobeDelay: 200,
+				 resetStrobeDelay: 30}
 	initByteSeq := []byte{
 		0x03, 0x03, 0x03, // base initialization
 		0x02, // setting up 4-bit transfer mode
@@ -92,6 +98,7 @@ func NewLcd(i2c *i2c.I2C, lcdType LcdType) (*Lcd, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return this, nil
 }
 
@@ -117,8 +124,8 @@ func (this *Lcd) writeDataWithStrobe(data byte) error {
 	}
 	seq := []rawData{
 		{data, 0}, // send data
-		{data | PIN_EN, 200 * time.Microsecond}, // set strobe
-		{data, 30 * time.Microsecond},           // reset strobe
+		{data | PIN_EN, time.Duration(this.writeStrobeDelay) * time.Microsecond}, 	// set strobe
+		{data, time.Duration(this.resetStrobeDelay) * time.Microsecond},          	// reset strobe
 	}
 	return this.writeRawDataSeq(seq)
 }
@@ -241,6 +248,7 @@ func (this *Lcd) TestWriteCGRam() error {
 func (this *Lcd) BacklightOn() error {
 	this.backlight = true
 	err := this.writeByte(0x00, 0)
+	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
 	if err != nil {
 		return err
 	}
@@ -250,6 +258,7 @@ func (this *Lcd) BacklightOn() error {
 func (this *Lcd) BacklightOff() error {
 	this.backlight = false
 	err := this.writeByte(0x00, 0)
+	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
 	if err != nil {
 		return err
 	}
@@ -258,12 +267,13 @@ func (this *Lcd) BacklightOff() error {
 
 func (this *Lcd) Clear() error {
 	err := this.writeByte(CMD_Clear_Display, 0)
+	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
 	return err
 }
 
 func (this *Lcd) Home() error {
 	err := this.writeByte(CMD_Return_Home, 0)
-	time.Sleep(3 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
 	return err
 }
 
@@ -307,4 +317,17 @@ func (this *Lcd) Write(buf []byte) (int, error) {
 func (this *Lcd) Command(cmd byte) error {
 	err := this.writeByte(cmd, 0)
 	return err
+}
+
+// GetStrobeDelays returns the SET and RESET strobe delays.
+func (this *Lcd) GetStrobeDelays() (writeDelay, resetDelay uint16) {
+	return this.writeStrobeDelay, this.resetStrobeDelay
+}
+
+// SetStrobeDelays sets the SET and RESET strobe delays.
+// These will be multiplied by time.microsecond.
+// For RPi 3, 240 and 30 seem stable values to use.
+func (this *Lcd) SetStrobeDelays(writeDelay, resetDelay uint16) {
+	this.writeStrobeDelay = writeDelay
+	this.resetStrobeDelay = resetDelay
 }
