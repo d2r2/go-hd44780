@@ -73,27 +73,61 @@ type Lcd struct {
 
 func NewLcd(i2c *i2c.I2C, lcdType LcdType) (*Lcd, error) {
 	this := &Lcd{i2c: i2c,
-				 backlight: false,
-				 lcdType: lcdType,
-				 writeStrobeDelay: 200,
-				 resetStrobeDelay: 30}
+		backlight: false,
+		lcdType: lcdType,
+		writeStrobeDelay: 200,
+		resetStrobeDelay: 30}
+	
+	// Wait is required during initialization steps.
+	// https://www.sparkfun.com/datasheets/LCD/HD44780.pdf (page 45)
+	
+	// Step 1 -> Must be sent according to datasheet with minimum delay afterwards
+	var err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(4100 * time.Microsecond)
+
+	// Step 2 -> Must be sent according to datasheet with minimum delay afterwards
+	err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(150 * time.Microsecond)
+
+	// Step 3 -> Must be sent according to datasheet with minimum delay afterwards
+	err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(100 * time.Microsecond)
+
+	// Step 4 -> Setting up 4-bit transfer mode (delay not spec'ed, but lets be safe)
+	err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(100 * time.Microsecond)
+	
+	// Step 5 -> Setting up display options (delay not spec'ed, but lets be safe)
 	initByteSeq := []byte{
-		0x03, 0x03, 0x03, // base initialization
-		0x02, // setting up 4-bit transfer mode
 		CMD_Function_Set | OPT_2_Lines | OPT_5x8_Dots | OPT_4Bit_Mode,
 		CMD_Display_Control | OPT_Enable_Display,
 		CMD_Entry_Mode | OPT_Increment,
 	}
 	for _, b := range initByteSeq {
-		err := this.writeByte(b, 0)
+		err = this.writeByte(b, 0)
+		time.Sleep(100 * time.Microsecond)
 		if err != nil {
 			return nil, err
 		}
 	}
-	err := this.Clear()
+
+	err = this.Clear()
 	if err != nil {
 		return nil, err
 	}
+
 	err = this.Home()
 	if err != nil {
 		return nil, err
