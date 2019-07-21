@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	device "github.com/d2r2/go-hd44780"
+	device "github.com/adrianh-za/go-hd44780"
 	"github.com/d2r2/go-i2c"
 )
 
@@ -16,10 +16,11 @@ func checkError(err error) {
 }
 
 func main() {
-	i2c, err := i2c.NewI2C(0x27, 2)
+	i2c, err := i2c.NewI2C(0x27, 1)
 	checkError(err)
 	defer i2c.Close()
 	lcd, err := device.NewLcd(i2c, device.LCD_20x4)
+	//lcd.SetStrobeDelays(400, 50)
 	checkError(err)
 	err = lcd.BacklightOn()
 	checkError(err)
@@ -44,11 +45,13 @@ func main() {
 			err = lcd.ShowMessage(strings.Repeat(" ", 20), lines[j])
 			checkError(err)
 		}
-		err = lcd.BacklightOff()
-		checkError(err)
 		time.Sleep(2 * time.Second)
-		err = lcd.BacklightOn()
-		checkError(err)
+		//err = lcd.BacklightOff()
+		//checkError(err)
+		//time.Sleep(2 * time.Second)
+		//err = lcd.BacklightOn()
+		//checkError(err)
+		
 		i++
 	}
 }
