@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bytes"
+	//"bytes"
 	"fmt"
 	"log"
 	"time"
 
-	device "github.com/d2r2/go-hd44780"
+	device "github.com/adrianh-za/go-hd44780"
 	"github.com/d2r2/go-i2c"
 )
 
@@ -17,7 +17,7 @@ func checkError(err error) {
 }
 
 func main() {
-	i2c, err := i2c.NewI2C(0x27, 2)
+	i2c, err := i2c.NewI2C(0x27, 1)
 	checkError(err)
 	defer i2c.Close()
 	lcd, err := device.NewLcd(i2c, device.LCD_16x2)
@@ -32,7 +32,7 @@ func main() {
 	// checkError(err)
 	// err = lcd.ShowMessage("R2D2, where are you?", device.SHOW_LINE_4)
 	// checkError(err)
-	time.Sleep(5 * time.Second)
+	/*time.Sleep(5 * time.Second)
 	for i := 0; i <= 12; i++ {
 		var buf bytes.Buffer
 		for j := 0; j <= 19; j++ {
@@ -53,14 +53,14 @@ func main() {
 		err = lcd.ShowMessage(buf.String(), device.SHOW_LINE_1)
 		checkError(err)
 		time.Sleep(1 * time.Second)
-	}
+	}*/
 	lcd.Clear()
 	for {
 		lcd.Home()
 		t := time.Now()
-		lcd.SetPosition(1, 0)
+		lcd.SetPosition(0, 0)
 		fmt.Fprint(lcd, t.Format("Monday Jan 2"))
-		lcd.SetPosition(2, 1)
+		lcd.SetPosition(1, 1)
 		fmt.Fprint(lcd, t.Format("15:04:05 2006"))
 		//		lcd.SetPosition(4, 0)
 		//		fmt.Fprint(lcd, "i2c, VGA, and Go")

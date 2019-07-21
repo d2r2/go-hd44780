@@ -14,29 +14,39 @@ const (
 	CMD_Return_Home          = 0x02
 	CMD_Entry_Mode           = 0x04
 	CMD_Display_Control      = 0x08
-	CMD_Cursor_Display_Shift = 0x10
+	CMD_Cursor_Shift		 = 0x10
 	CMD_Function_Set         = 0x20
 	CMD_CGRAM_Set            = 0x40
 	CMD_DDRAM_Set            = 0x80
 
-	// Options
-	OPT_Increment = 0x02 // CMD_Entry_Mode
-	OPT_Decrement = 0x00
-	// OPT_Display_Shift  = 0x01 // CMD_Entry_Mode
-	OPT_Enable_Display = 0x04 // CMD_Display_Control
-	OPT_Enable_Cursor  = 0x02 // CMD_Display_Control
-	OPT_Enable_Blink   = 0x01 // CMD_Display_Control
-	OPT_Display_Shift  = 0x08 // CMD_Cursor_Display_Shift
-	OPT_Shift_Right    = 0x04 // CMD_Cursor_Display_Shift 0 = Left
+	// Flags for display entry mode (CMD_Entry_Mode)
+	OPT_EntryLeft				= 0x02
+	OPT_EntryRight				= 0x00
+	OPT_Increment 				= 0x01 
+	OPT_Decrement 				= 0x00
+
+	// Flags for display control (CMD_Display_Control)
+	OPT_Enable_Display 	= 0x04
+	OPT_Disable_Display = 0x00
+	OPT_Enable_Cursor  	= 0x02
+	OPT_Disable_Cursor  = 0x00
+	OPT_Enable_Blink   	= 0x01
+	OPT_Disable_Blink   = 0x00
+	
+	// Flags for display/cursor move ()
+	OPT_Display_Move  	= 0x08
+	OPT_Cursor_Move		= 0x00
+	OPT_Move_Right    	= 0x04
+	OPT_Move_Left    	= 0x00
+	
+	// Flags for function set (CMD_Function_Set)
 	OPT_8Bit_Mode      = 0x10
 	OPT_4Bit_Mode      = 0x00
-	OPT_2_Lines        = 0x08 // CMD_Function_Set 0 = 1 line
+	OPT_2_Lines        = 0x08
 	OPT_1_Lines        = 0x00
-	OPT_5x10_Dots      = 0x04 // CMD_Function_Set 0 = 5x7 dots
+	OPT_5x10_Dots      = 0x04
 	OPT_5x8_Dots       = 0x00
-)
 
-const (
 	PIN_BACKLIGHT byte = 0x08
 	PIN_EN        byte = 0x04 // Enable bit
 	PIN_RW        byte = 0x02 // Read/Write bit
@@ -69,6 +79,10 @@ type Lcd struct {
 	lcdType   			LcdType
 	writeStrobeDelay	uint16
 	resetStrobeDelay	uint16
+	active				bool
+	displayFunction 	byte
+	displayControl  	byte
+	displayMode     	byte
 }
 
 func NewLcd(i2c *i2c.I2C, lcdType LcdType) (*Lcd, error) {
@@ -76,58 +90,81 @@ func NewLcd(i2c *i2c.I2C, lcdType LcdType) (*Lcd, error) {
 		backlight: false,
 		lcdType: lcdType,
 		writeStrobeDelay: 200,
-		resetStrobeDelay: 30}
-	
-	// Wait is required during initialization steps.
-	// https://www.sparkfun.com/datasheets/LCD/HD44780.pdf (page 45)
-	
-	// Step 1 -> Must be sent according to datasheet with minimum delay afterwards
-	var err = this.writeByte(0x03, 0)
-	if err != nil {
-		return nil, err
-	}
-	time.Sleep(4100 * time.Microsecond)
-
-	// Step 2 -> Must be sent according to datasheet with minimum delay afterwards
-	err = this.writeByte(0x03, 0)
-	if err != nil {
-		return nil, err
-	}
-	time.Sleep(150 * time.Microsecond)
-
-	// Step 3 -> Must be sent according to datasheet with minimum delay afterwards
-	err = this.writeByte(0x03, 0)
-	if err != nil {
-		return nil, err
-	}
-	time.Sleep(100 * time.Microsecond)
-
-	// Step 4 -> Setting up 4-bit transfer mode (delay not spec'ed, but lets be safe)
-	err = this.writeByte(0x03, 0)
-	if err != nil {
-		return nil, err
-	}
-	time.Sleep(100 * time.Microsecond)
-	
-	// Step 5 -> Setting up display options (delay not spec'ed, but lets be safe)
-	initByteSeq := []byte{
-		CMD_Function_Set | OPT_2_Lines | OPT_5x8_Dots | OPT_4Bit_Mode,
-		CMD_Display_Control | OPT_Enable_Display,
-		CMD_Entry_Mode | OPT_Increment,
-	}
-	for _, b := range initByteSeq {
-		err = this.writeByte(b, 0)
-		time.Sleep(100 * time.Microsecond)
-		if err != nil {
-			return nil, err
+		resetStrobeDelay: 30,
+		active: true,
+		displayFunction: 0x00,
+		displayControl: 0x00,
+		displayMode: 0x00,
 		}
+	
+	// Wait is required during initialization steps.  Various info below about delays.
+	// https://www.sparkfun.com/datasheets/LCD/HD44780.pdf (page 45)
+	// https://github.com/mrmorphic/hwio/blob/master/devices/hd44780/hd44780_i2c.go
+	// https://github.com/duinoWitchery/hd44780/blob/master/hd44780.cpp (read the comments)
+
+	// Initial delay as per datasheet (need at least 40ms after power rises above 2.7V before sending commands.)
+	time.Sleep(100 * time.Millisecond)	// Wait 100ms vs 40ms
+
+	// Step 1 -> Base initialization sent with safe minimum delay afterwards
+	var err = this.writeByte(0x03, 0)	
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(5 * time.Millisecond) 	// Wait 5ms vs 4.1ms
+
+	// Step 2 -> Base initialization sent with safe minimum delay afterwards
+	err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(1 * time.Millisecond) 	// Wait 1ms vs 100us
+
+	// Step 3 -> Base initialization sent with safe minimum delay afterwards
+	err = this.writeByte(0x03, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(1 * time.Millisecond) 	// Wait 1ms vs 100us
+
+	// Step 4 -> 4-bit transfer mode sent with safe minimum delay afterwards
+	err = this.writeByte(0x02, 0)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(1 * time.Millisecond) 	// Wait 1ms vs 100us
+	
+	// Step 5a -> Execute FUNCTIONSET command
+	this.displayFunction = OPT_2_Lines | OPT_5x8_Dots | OPT_4Bit_Mode
+	err = this.writeByte(CMD_Function_Set | this.displayFunction, 0)
+	time.Sleep(1 * time.Millisecond)	// Wait 1ms	to be safe
+	if err != nil {
+		return nil, err
 	}
 
+	// Step 5b -> Execute DISPLAYCONTROL command
+	this.displayControl = OPT_Enable_Display | OPT_Disable_Cursor | OPT_Disable_Blink
+	err = this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(1 * time.Millisecond)	// Wait 1ms	to be safe
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 5c -> Execute ENTRYMODE command
+	this.displayMode =  OPT_EntryLeft
+	err = this.writeByte(CMD_Entry_Mode | this.displayMode, 0)
+	time.Sleep(1 * time.Millisecond)	// Wait 1ms	to be safe
+	if err != nil {
+		return nil, err
+   
+	}
+
+	// Clear the display
 	err = this.Clear()
 	if err != nil {
 		return nil, err
 	}
 
+	// Send cursor to home
 	err = this.Home()
 	if err != nil {
 		return nil, err
@@ -237,6 +274,11 @@ func (this *Lcd) splitText(text string, options ShowOptions) []string {
 }
 
 func (this *Lcd) ShowMessage(text string, options ShowOptions) error {
+	//Not active, so don't try do anything
+	if (!this.active) {
+		return nil
+	}
+
 	lines := this.splitText(text, options)
 	log.Debug("Output: %v\n", lines)
 	startLine, endLine := this.getLineRange(options)
@@ -282,7 +324,7 @@ func (this *Lcd) TestWriteCGRam() error {
 func (this *Lcd) BacklightOn() error {
 	this.backlight = true
 	err := this.writeByte(0x00, 0)
-	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
+	time.Sleep(100 * time.Millisecond)		// Used delay as specified in https://github.com/duinoWitchery/hd44780/blob/master/hd44780.cpp (Line 885)
 	if err != nil {
 		return err
 	}
@@ -292,7 +334,7 @@ func (this *Lcd) BacklightOn() error {
 func (this *Lcd) BacklightOff() error {
 	this.backlight = false
 	err := this.writeByte(0x00, 0)
-	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
+	time.Sleep(250 * time.Millisecond)		// Used delay as specified in https://github.com/duinoWitchery/hd44780/blob/master/hd44780.cpp (Line 887)
 	if err != nil {
 		return err
 	}
@@ -301,13 +343,81 @@ func (this *Lcd) BacklightOff() error {
 
 func (this *Lcd) Clear() error {
 	err := this.writeByte(CMD_Clear_Display, 0)
-	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
+	time.Sleep(2 * time.Millisecond)		// Do same delay as Home().
 	return err
 }
 
 func (this *Lcd) Home() error {
 	err := this.writeByte(CMD_Return_Home, 0)
-	time.Sleep(10 * time.Millisecond)	//Slight delay seems to help stablize on RPi3
+	time.Sleep(2 * time.Millisecond)		// Page 24 of datasheet says 1.52ms to execute.  We will do slightly longer delay.
+	return err
+}
+
+func (this *Lcd) DisplayOn() error {
+	this.displayControl  |= OPT_Enable_Display
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) DisplayOff() error {
+	this.displayControl  = this.displayControl  &^ OPT_Enable_Display
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) BlinkOn() error {
+	this.displayControl |= OPT_Enable_Blink
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) BlinkOff() error {
+	this.displayControl = this.displayControl &^ OPT_Enable_Blink
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) CursorOn() error {
+	this.displayControl |= OPT_Enable_Cursor
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) CursorOff() error {
+	this.displayControl = this.displayControl &^ OPT_Enable_Cursor
+	err := this.writeByte(CMD_Display_Control | this.displayControl, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) ScrollDisplayLeft() error {
+	err := this.writeByte(CMD_Cursor_Shift | OPT_Display_Move | OPT_Move_Left, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) ScrollDisplayRight() error {
+	err := this.writeByte(CMD_Cursor_Shift | OPT_Display_Move | OPT_Move_Right, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) LeftRightDisplay() error {
+	this.displayMode |= OPT_EntryLeft
+	err := this.writeByte(CMD_Entry_Mode | this.displayMode, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
+	return err
+}
+
+func (this *Lcd) RightLeftDisplay() error {
+	this.displayMode = this.displayMode &^ OPT_EntryLeft
+	err := this.writeByte(CMD_Entry_Mode | this.displayMode, 0)
+	time.Sleep(2 * time.Millisecond)        // Do same delay as Home().
 	return err
 }
 
@@ -323,6 +433,11 @@ func (this *Lcd) getSize() (width, height int) {
 }
 
 func (this *Lcd) SetPosition(line, pos int) error {
+	//Not active, so don't try do anything
+	if (!this.active) {
+		return nil
+	}
+	
 	w, h := this.getSize()
 	if w != -1 && (pos < 0 || pos > w-1) {
 		return fmt.Errorf("Cursor position %d "+
@@ -353,15 +468,58 @@ func (this *Lcd) Command(cmd byte) error {
 	return err
 }
 
-// GetStrobeDelays returns the SET and RESET strobe delays.
+// GetStrobeDelays returns the WRITE and RESET strobe delays in microseconds.
 func (this *Lcd) GetStrobeDelays() (writeDelay, resetDelay uint16) {
 	return this.writeStrobeDelay, this.resetStrobeDelay
 }
 
-// SetStrobeDelays sets the SET and RESET strobe delays.
-// These will be multiplied by time.microsecond.
-// For RPi 3, 240 and 30 seem stable values to use.
+// SetStrobeDelays sets the WRITE and RESET strobe delays in microseconds.
 func (this *Lcd) SetStrobeDelays(writeDelay, resetDelay uint16) {
 	this.writeStrobeDelay = writeDelay
 	this.resetStrobeDelay = resetDelay
+}
+
+// Fill will show the specified character across the entire display
+func (this *Lcd) Fill(char rune) (error) {
+	//Not active, so don't try do anything
+	if (!this.active) {
+		return nil
+	}
+	
+	var width, height = this.getSize()
+
+	// Invalid srceen size, do nothing
+	if (width * height <= 1) {
+		return nil
+	}
+
+	// Fill the display line by line
+	for lineCount := 0; lineCount < height; lineCount++ {
+		// Move cursor to position
+		err := this.SetPosition(lineCount, 0)
+		if err != nil {
+			return err
+		}
+
+		// Fill the line
+		for colCount := 0; colCount < width; colCount++ {
+			err = this.writeByte(byte(char), PIN_RS)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// Shutdown will cleanup the LCD display
+func (this *Lcd) Shutdown() {
+	this.active = false						//Set active to FALSE.  This will "block" characters being written to display (check functions which check this flag)
+	time.Sleep(250 * time.Millisecond)		//Sleep to allow for any instructions/commands to complete before we continue
+	
+	// Shutdown display
+	this.BacklightOff()
+	this.Clear()
+	this.Home()
 }
