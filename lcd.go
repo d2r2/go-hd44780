@@ -116,7 +116,10 @@ func (this *Lcd) writeDataWithStrobe(data byte) error {
 		data |= PIN_BACKLIGHT
 	}
 	seq := []rawData{
-		{data, 0}, // send data
+		// The execution time to Write CGRAM or DDRAM:
+		// - 37 + 4 microseconds (when fcp = 270 kHz)
+		// - 40 + 4.32 microseconds (when fcp = 250 kHz)
+		{data, 50 * 1000 * time.Nanosecond},     // send data
 		{data | PIN_EN, 200 * time.Microsecond}, // set strobe
 		{data, 30 * time.Microsecond},           // reset strobe
 	}
@@ -197,7 +200,7 @@ func (this *Lcd) splitText(text string, options ShowOptions) []string {
 
 func (this *Lcd) ShowMessage(text string, options ShowOptions) error {
 	lines := this.splitText(text, options)
-	log.Debug("Output: %v\n", lines)
+	lg.Debugf("Output: %v\n", lines)
 	startLine, endLine := this.getLineRange(options)
 	i := 0
 	for {

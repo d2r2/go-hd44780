@@ -53,6 +53,16 @@ func main() {
 }
 ```
 
+Tutorial
+--------
+
+In its turn, go-hd44780 use [go-logger](https://github.com/d2r2/go-logger) library to output debug and other notification's lines which produce all necessary levels of logging. You can manage what level of verbosity you would like to see, by adding call:
+```go
+// Uncomment/comment next line to suppress/increase verbosity of output
+logger.ChangePackageLogLevel("hd44780", logger.InfoLevel)
+```
+Once you put this call, it will decrease verbosity from default "Debug" up to next "Info" level, reducing the number of low-level console outputs that occur during interaction with the I2C bus. Please, find examples in corresponding I2C-driven sensors among my projects.
+
 Getting help
 ------------
 
